@@ -32,7 +32,6 @@ class TestCrawler(scrapy.Spider):
                 end
                 '''
 
-    url_to_get_back_to_under_test = ""
 
     test_points = []
     test_number_of_urls = 0
@@ -42,7 +41,7 @@ class TestCrawler(scrapy.Spider):
     seen_class_names = []
 
     text_keywords =     ["Available", "available", "Position", "position", "Positions", "positions", "stillinger", "Application date", "job", "Job", "Openings", "openings", "career", "careers", "Career", "Careers", "karriere", "Job title", "vacant", "Jobs", "jobs", "Results", "results", "Search", "search", "Results" ]
-    link_keywords =     ["available-jobs", "position", "application-date", "job", "careers", "karriere", "vacancies", "jobposting", "jobsearch"]
+    link_keywords =     ["available-jobs", "position", "application-date", "job", "careers", "karriere", "vacancies", "jobposting", "jobsearch", "Job-Position"]
     tag_keywords =      ["job"]
     button_keywords =   ["Next", "Load more", "Indlæs mere", "Næste", "Hent flere", "Første side", "Sidste side", "Side"]
     th_keywords =       ["Available Jobs", "type", "Stilling"]
@@ -104,21 +103,21 @@ class TestCrawler(scrapy.Spider):
 # ------------------------------------
     def testParser(self, response):
         print("Test 1", response.url)
-        self.url_to_get_back_to_under_test = response.url
         base_url = re.search("^.+?[^\/:](?=[?\/]|$)", response.url).group()
-        yield SplashRequest(url=base_url, callback=self.testParser2, args={'wait' : 10, 'lua_source':self.lua_base})
-    def testParser2(self, response):
+        yield SplashRequest(url=base_url, callback=self.testParser2, args={'wait' : 10, 'lua_source':self.lua_base},cb_kwargs=dict(main_url=response.url))
+    def testParser2(self, response, main_url):
         print("Test 2", response.url)
-        self.urls_seen_so_far_list = self.removeDublicates(response.css('*::attr(href)').getall())
-        yield SplashRequest(url=self.url_to_get_back_to_under_test, callback=self.testParser3, args={'wait' : 10, 'lua_source':self.lua_base}) 
-    def testParser3(self, response):
+        urls_seen_so_far_list = self.removeDublicates(response.css('*::attr(href)').getall())
+        yield SplashRequest(url=main_url, callback=self.testParser3, args={'wait' : 10, 'lua_source':self.lua_base}, cb_kwargs=dict(urls_seen_so_far_list=urls_seen_so_far_list)) 
+    def testParser3(self, response, urls_seen_so_far_list):
         print("Test 3", response.url)
-        points1 = self.findTable(response)
+        points1 = self.findTable(response, urls_seen_so_far_list)
         points2 = self.findKeywordsInTitle(response)
-        points3 = self.findKeywordsInUl(response)
+        points3 = self.findKeywordsInUl(response, urls_seen_so_far_list)
         points4 = self.findKeywordsInButton(response)
+        points5 = self.findUrlsInDivs(response, urls_seen_so_far_list)
         print("--------------------------------")
-        print(points1, points2, points3, points4)
+        print("Table:",points1, "Title",points2, "Ul", points3, "Button", points4, "Divs", points5,f"Total: {points1 + points2 + points3 + points4 + points5}")
         print("--------------------------------")
 
         self.test_points.append([points1, points2, points3, points4])
@@ -192,7 +191,7 @@ class TestCrawler(scrapy.Spider):
         print(self.not_found_urls)
         # Check 1 Ul
 
-    def findTable(self, response):
+    def findTable(self, response, urls_seen_so_far_list):
         th_list = []
         href_list = []
         points = 0
@@ -209,7 +208,7 @@ class TestCrawler(scrapy.Spider):
                             href_list.extend(x_path_response)
                 if href_list:
                     for url in self.removeDublicates(href_list):
-                        if self.isUniqueUrlPressent(self.urls_seen_so_far_list, url):
+                        if self.isUniqueUrlPressent(urls_seen_so_far_list, url):
                             points += 2
 
         return points
@@ -227,7 +226,7 @@ class TestCrawler(scrapy.Spider):
         else:
             return 0
 
-    def findKeywordsInUl(self, response):
+    def findKeywordsInUl(self, response, urls_seen_so_far_list):
         href_list = []
         points = 0
         print(response.url)
@@ -239,7 +238,7 @@ class TestCrawler(scrapy.Spider):
                     href_list.extend(x_path_response)
             if href_list:
                 for url in self.removeDublicates(href_list):
-                    if self.isUniqueUrlPressent(self.urls_seen_so_far_list, url):
+                    if self.isUniqueUrlPressent(urls_seen_so_far_list, url):
                         points += 2
         return points
               
@@ -254,6 +253,22 @@ class TestCrawler(scrapy.Spider):
                     counter += len(x_path_response)
         return 2 * counter
 
+    def findUrlsInDivs(self, response, urls_seen_so_far_list):
+
+        href_list = []
+        points = 0
+        print(response.url)
+        if response.xpath('//body//div'):
+            for keyword in self.link_keywords:
+                x_path = f'//body//div//*[contains(@href,"{keyword}")]'
+                x_path_response = response.xpath(x_path).getall()
+                if x_path_response:
+                    href_list.extend(x_path_response)
+            if href_list:
+                for url in self.removeDublicates(href_list):
+                    if self.isUniqueUrlPressent(urls_seen_so_far_list, url):
+                        points += 2
+        return points
 
 
 
